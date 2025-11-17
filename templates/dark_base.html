@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {{ bokeh_css }}
+    {{ bokeh_js }}
+
+    <!-- Force full-page dark background -->
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background-color: #020617 !important;
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Make Bokeh container fill the full page */
+        body > div.bk-root, 
+        body > div.bk-root > div {
+            min-height: 100vh !important;
+            background-color: #020617 !important;
+        }
+
+        /* Extra CSS injected from Python (optional) */
+        {{ extra_css | safe }}
+    </style>
+</head>
+
+<body>
+    {{ plot_div | safe }}
+    {{ plot_script | safe }}
+</body>
+</html>
