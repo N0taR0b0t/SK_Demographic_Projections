@@ -598,7 +598,7 @@ tot_pop_fig = figure(
     title="Total Population",
     x_axis_label="Year",
     y_axis_label="Population (millions)",
-    height=468,
+    height=450,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
 )
@@ -611,18 +611,20 @@ tfr_fig = figure(
     title="Total Fertility Rate (TFR)",
     x_axis_label="Year",
     y_axis_label="Children per woman",
-    height=396,
+    height=380,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
 )
-tfr_fig.line("year", "tfr", source=tfr_path_source, line_width=2, legend_label="Interpolated path")
-tfr_points_renderer = tfr_fig.circle("year", "tfr", source=tfr_anchors_source, size=10, color="orange", legend_label="Anchors (drag)")
-tfr_fig.legend.location = "top_right"
+tfr_fig.line("year", "tfr", source=tfr_path_source, line_width=2)
+# Add invisible larger circles as hit targets for easier dragging
+tfr_hit_renderer = tfr_fig.circle("year", "tfr", source=tfr_anchors_source, size=25, color="orange", alpha=0.0)
+# Add visible smaller circles on top
+tfr_points_renderer = tfr_fig.circle("year", "tfr", source=tfr_anchors_source, size=10, color="orange")
 tfr_hover = HoverTool(tooltips=[("Year", "@year{0}"), ("TFR", "@tfr{0.000}")], mode="vline")
 tfr_fig.add_tools(tfr_hover)
 
-# Add PointDrawTool for dragging anchors
-tfr_draw_tool = PointDrawTool(renderers=[tfr_points_renderer], add=False)
+# Add PointDrawTool for dragging anchors - only use hit renderer to avoid double updates
+tfr_draw_tool = PointDrawTool(renderers=[tfr_hit_renderer], add=False)
 tfr_fig.add_tools(tfr_draw_tool)
 tfr_fig.toolbar.active_tap = tfr_draw_tool
 
@@ -632,7 +634,7 @@ mig_fig = figure(
     title="Net International Migration",
     x_axis_label="Year",
     y_axis_label="People",
-    height=396,
+    height=380,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
     y_range=Range1d(-100000, 200000),
@@ -651,7 +653,7 @@ pyramid_fig = figure(
     title="Age Pyramid",
     x_axis_label="Population (people)",
     y_axis_label="Age (years)",
-    height=576,
+    height=550,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
 )
@@ -1291,7 +1293,6 @@ sidebar.css_classes = ["dashboard-sidebar"]
 # TFR figure
 tfr_editor_block = column(
     Div(text="<h3>Total Fertility Rate (TFR)</h3>"),
-    Div(text="<p>Drag the orange points to adjust TFR values.</p>"),
     tfr_fig,
     sizing_mode="stretch_width",
 )
@@ -1324,7 +1325,7 @@ main = column(
     scenario_caption_div,
     Div(text="<h2>Assumptions (paths)</h2>"),
     charts_row_2,
-    Div(text="<br>"),
+    #Div(text="<br>"),
     charts_row_1,
     Div(text="<br>"),
     pyramid_container,
