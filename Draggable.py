@@ -11,6 +11,7 @@ from bokeh.models import (
     ColumnDataSource, Slider, Select, TextInput, Div, Button, RadioButtonGroup,
     NumberFormatter, Range1d,
     InlineStyleSheet, NumeralTickFormatter, HoverTool, PointDrawTool, CustomJS,
+    FuncTickFormatter, Span,
 )
 from bokeh.plotting import figure
 from bokeh.themes import Theme
@@ -203,9 +204,12 @@ BASE_YEAR = 2025
 FINAL_YEAR_DEFAULT = 2100
 FINAL_YEAR_MIN = 2025
 FINAL_YEAR_MAX = 2100
+EDITABLE_YEARS = [BASE_YEAR, 2035, 2070, 2100]
 
 SCENARIOS = ["Low", "Medium", "High", "Custom"]
 PRESET_SCENARIOS = ["Low", "Medium", "High"]
+
+TEST_ADDITIONAL = 500_000
 
 STATE = {"years": None, "male": None, "female": None, "total": None, "asfr_shapes": None, "initializing": True}
 
@@ -277,8 +281,9 @@ PDF_PARAMS["Custom"] = dict(PDF_PARAMS["Medium"])
 PDF_TOTAL_2070["Custom"] = PDF_TOTAL_2070["Medium"]
 TFR_TABLE_EDITABLE: Dict[str, Dict[int, float]] = {s: dict(TFR_TABLE_DEFAULT[s]) for s in SCENARIOS}
 
-# Track current scenario
+# Track current scenario and last preset used (for Custom scenario reference)
 CURRENT_SCENARIO = {"name": "Medium"}
+LAST_PRESET_SCENARIO = "Medium"  # Track which preset was active before switching to Custom
 
 # ======================= BASE POPULATION =======================
 
@@ -308,6 +313,15 @@ def load_base_population(csv_path: str):
             else:
                 per_age = total_bin / (a1 - a0 + 1)
                 pop[sex][a0:a1 + 1] += per_age
+
+    # Add TEST_ADDITIONAL people equally spread across ages (equally split male/female)
+    if TEST_ADDITIONAL > 0:
+        age_range = np.arange(6, 26) #Ages
+        per_age_per_sex = TEST_ADDITIONAL / (2.0 * len(age_range))  # Split by sex, then by age
+        for age in age_range:
+            pop[MALE][age] += per_age_per_sex
+            pop[FEMALE][age] += per_age_per_sex
+
     return pop
 
 # ======================= FERTILITY (PDF-style) =========================
@@ -477,9 +491,9 @@ scenario_buttons = RadioButtonGroup(labels=["Low", "Medium", "High", "Custom"], 
 scenario_buttons.css_classes = ["scenario-radio-group"]
 
 srb_slider = Slider(title="Sex ratio at birth (M/F)", start=1.00, end=1.10, step=0.001, value=1.055)
-child_weight_slider = Slider(title="Child hump weight", start=0.0, end=1.0, step=0.05, value=0.35)
-ya_peak_age_slider = Slider(title="Young-adult peak age", start=22, end=40, step=1, value=28)
-ya_spread_slider = Slider(title="Young-adult spread (σ)", start=3, end=12, step=1, value=6)
+#child_weight_slider = Slider(title="Child hump weight", start=0.0, end=1.0, step=0.05, value=0.35)
+#ya_peak_age_slider = Slider(title="Young-adult peak age", start=22, end=40, step=1, value=28)
+#ya_spread_slider = Slider(title="Young-adult spread (σ)", start=3, end=12, step=1, value=6)
 
 base_pop_div = Div(text="<b>Base population (people)</b>: –")
 last_pop_div = Div(text="<b>Last year population (people)</b>: –")
@@ -491,14 +505,15 @@ check_2070_div = Div(text="")
 
 initial_scenario = CURRENT_SCENARIO["name"]
 initial_tfr_table = TFR_TABLE_EDITABLE[initial_scenario]
-# Filter to only show years from BASE_YEAR onwards
-initial_tfr_years = [y for y in sorted(initial_tfr_table.keys()) if y >= BASE_YEAR]
-initial_tfr_values = [initial_tfr_table[y] for y in initial_tfr_years]
 
+# Always use the 4 editable years; fill values by interpolation
+initial_tfr_years = EDITABLE_YEARS.copy()
+initial_tfr_values = list(interp_from_table(initial_tfr_years, initial_tfr_table))
 tfr_anchors_source = ColumnDataSource(data={"year": initial_tfr_years, "tfr": initial_tfr_values})
 
 # CustomJS to lock x-axis and prevent data corruption
 lock_x_callback = CustomJS(args=dict(source=tfr_anchors_source), code="""
+// Prevent recursive calls
 if (source._locking) {
     console.log('Callback already locked, skipping');
     return;
@@ -520,49 +535,51 @@ console.log('Lock callback triggered');
 console.log('Current years:', years);
 console.log('Fixed years:', fixed_years);
 
-// If length changed, it's a scenario change - accept and reset
-if (years.length !== fixed_years.length) {
-    console.log('Length changed - accepting as scenario change');
+// SCENARIO 1: Check for scenario change flag in data
+// Python on_scenario_change sets _scenario_change: [True] in the data
+if (source.data['_scenario_change'] && source.data['_scenario_change'][0] === true) {
+    console.log('Scenario change flag detected - accepting new years');
     source._fixed_years = years.slice();
     source._fixed_tfr = tfr.slice();
-    return;
-}
-
-// Count how many year values differ
-let year_diffs = 0;
-for (let i = 0; i < years.length; i++) {
-    if (Math.abs(years[i] - fixed_years[i]) > 0.001) {
-        year_diffs++;
-        console.log('Year diff at index', i, ':', years[i], 'vs', fixed_years[i]);
-    }
-}
-
-console.log('Total year diffs:', year_diffs);
-
-// If no years changed, just update TFR and return (vertical drag only)
-if (year_diffs === 0) {
-    console.log('No year changes - vertical drag only');
-    source._fixed_tfr = tfr.slice();
-    return;
-}
-
-// If only 1-2 years changed, it's a user drag - lock x and snap back
-if (year_diffs <= 2) {
-    console.log('User drag detected - snapping back');
+    // Remove the flag so normal drag behavior resumes
     source._locking = true;
-    // Create new data object to force visual update
     source.data = {
-        year: fixed_years.slice(),
+        year: years.slice(),
         tfr: tfr.slice()
     };
     source._locking = false;
-    source._fixed_tfr = tfr.slice();
     return;
 }
 
-// If many/all years changed, it's likely a scenario change - accept new values
-console.log('Many changes - accepting as scenario change');
-source._fixed_years = years.slice();
+// SCENARIO 2: Vertical drag only (TFR changed, years unchanged)
+let any_year_changed = false;
+for (let i = 0; i < years.length; i++) {
+    if (Math.abs(years[i] - fixed_years[i]) > 0.001) {
+        any_year_changed = true;
+        break;
+    }
+}
+
+if (!any_year_changed) {
+    console.log('Vertical drag only - updating TFR values');
+    source._fixed_tfr = tfr.slice();
+    // Data is already correct (years locked, tfr updated by drag)
+    // Python callback will handle the update automatically
+    return;
+}
+
+// SCENARIO 3: User attempted horizontal/diagonal drag - BLOCK IT
+console.log('Horizontal drag detected - snapping back to fixed years');
+source._locking = true;
+// Snap x back to fixed years but keep the new TFR values
+// Flag array must match length of data arrays (Bokeh requirement)
+const flag_array = new Array(tfr.length).fill(true);
+source.data = {
+    year: fixed_years.slice(),
+    tfr: tfr.slice(),
+    _user_drag: flag_array  // Flag to tell Python this is a user drag that needs updating
+};
+source._locking = false;
 source._fixed_tfr = tfr.slice();
 """)
 tfr_anchors_source.js_on_change('data', lock_x_callback)
@@ -570,6 +587,10 @@ tfr_anchors_source.js_on_change('data', lock_x_callback)
 tfr_path_source = ColumnDataSource(data={"year": [], "tfr": []})
 tot_pop_source = ColumnDataSource(data={"year": [], "total": []})
 mig_source = ColumnDataSource(data={"year": [], "male": [], "female": []})
+# Separate sources for Low, Medium, High preset overlays
+mig_low_source = ColumnDataSource(data={"year": [], "total": []})
+mig_medium_source = ColumnDataSource(data={"year": [], "total": []})
+mig_high_source = ColumnDataSource(data={"year": [], "total": []})
 dep_source = ColumnDataSource(data={"year": [], "young": [], "old": [], "total": []})
 age_pyr_source = ColumnDataSource(data={"age": [], "sex": [], "value": [], "population": []})
 
@@ -616,11 +637,16 @@ mig_fig = figure(
     height=396,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
+    y_range=Range1d(-100000, 200000),
 )
-mig_fig.line("year", "male", source=mig_source, line_width=2, legend_label="Male")
-mig_fig.line("year", "female", source=mig_source, line_width=2, line_dash="dashed", legend_label="Female")
+# Add preset scenario lines (Low, Medium, High) - these will be styled dynamically
+mig_low_line = mig_fig.line("year", "total", source=mig_low_source, line_width=2, line_color="gray", line_alpha=0.3, legend_label="Low")
+mig_medium_line = mig_fig.line("year", "total", source=mig_medium_source, line_width=2, line_color="gray", line_alpha=0.3, legend_label="Medium")
+mig_high_line = mig_fig.line("year", "total", source=mig_high_source, line_width=2, line_color="gray", line_alpha=0.3, legend_label="High")
+
 mig_fig.legend.location = "top_right"
-mig_hover = HoverTool(tooltips=[("Year", "@year{0}"), ("Male", "@male{0,0}"), ("Female", "@female{0,0}")], mode="vline")
+mig_fig.yaxis.formatter = NumeralTickFormatter(format="0,0")
+mig_hover = HoverTool(tooltips=[("Year", "@year{0}"), ("Total", "@total{0,0}")], mode="vline")
 mig_fig.add_tools(mig_hover)
 
 pyramid_fig = figure(
@@ -633,7 +659,12 @@ pyramid_fig = figure(
 )
 pyramid_fig.y_range.range_padding = 0.05
 pyramid_fig.x_range = Range1d(-1, 1)
-pyramid_fig.xaxis.formatter = NumeralTickFormatter(format="0,0")
+
+# Custom tick formatter to show absolute values (no negative signs)
+pyramid_fig.xaxis.formatter = FuncTickFormatter(code="""
+    return Math.abs(tick).toLocaleString();
+""")
+
 pyramid_fig.hbar(
     y="age",
     right="value",
@@ -646,6 +677,10 @@ pyramid_hover = HoverTool(tooltips=[("Age", "@age"), ("Sex", "@sex"), ("Populati
 pyramid_fig.add_tools(pyramid_hover)
 
 pyr_year_slider = Slider(title="Select year (age pyramid)", start=BASE_YEAR, end=FINAL_YEAR_DEFAULT, step=1, value=BASE_YEAR)
+pyr_play_button = Button(label="▶ Play", button_type="success", width=100)
+
+# Track animation state
+ANIMATION_STATE = {"playing": False, "callback_id": None}
 
 dep_fig = figure(
     title="Dependency Ratios",
@@ -661,6 +696,47 @@ dep_fig.line("year", "total", source=dep_source, line_width=2, line_dash="dotdas
 dep_fig.legend.location = "top_left"
 dep_hover = HoverTool(tooltips=[("Year", "@year{0}"), ("Young/Wkg", "@young{0.000}"), ("Old/Wkg", "@old{0.000}"), ("Total/Wkg", "@total{0.000}")], mode="vline")
 dep_fig.add_tools(dep_hover)
+
+# ======================= YEAR INDICATOR (for animation) =========================
+
+# Vertical line spans for each time-series figure
+year_span_tot_pop = Span(location=BASE_YEAR, dimension='height', line_color='white', line_width=2, line_alpha=0.8, visible=False)
+year_span_tfr = Span(location=BASE_YEAR, dimension='height', line_color='white', line_width=2, line_alpha=0.8, visible=False)
+year_span_mig = Span(location=BASE_YEAR, dimension='height', line_color='white', line_width=2, line_alpha=0.8, visible=False)
+year_span_dep = Span(location=BASE_YEAR, dimension='height', line_color='white', line_width=2, line_alpha=0.8, visible=False)
+
+# Add spans to figures
+tot_pop_fig.add_layout(year_span_tot_pop)
+tfr_fig.add_layout(year_span_tfr)
+mig_fig.add_layout(year_span_mig)
+dep_fig.add_layout(year_span_dep)
+
+# Data sources for intersection dots
+year_dot_tot_pop_source = ColumnDataSource(data={"x": [], "y": []})
+year_dot_tfr_source = ColumnDataSource(data={"x": [], "y": []})
+year_dot_mig_male_source = ColumnDataSource(data={"x": [], "y": []})
+year_dot_mig_female_source = ColumnDataSource(data={"x": [], "y": []})
+year_dot_dep_young_source = ColumnDataSource(data={"x": [], "y": []})
+year_dot_dep_old_source = ColumnDataSource(data={"x": [], "y": []})
+year_dot_dep_total_source = ColumnDataSource(data={"x": [], "y": []})
+
+# Add circle glyphs for intersection dots (store renderers for visibility control)
+year_dot_tot_pop_renderer = tot_pop_fig.circle("x", "y", source=year_dot_tot_pop_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_tfr_renderer = tfr_fig.circle("x", "y", source=year_dot_tfr_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_mig_male_renderer = mig_fig.circle("x", "y", source=year_dot_mig_male_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_mig_female_renderer = mig_fig.circle("x", "y", source=year_dot_mig_female_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_dep_young_renderer = dep_fig.circle("x", "y", source=year_dot_dep_young_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_dep_old_renderer = dep_fig.circle("x", "y", source=year_dot_dep_old_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_dep_total_renderer = dep_fig.circle("x", "y", source=year_dot_dep_total_source, size=8, color="white", line_color="black", line_width=1)
+
+# Initially hide all renderers
+year_dot_tot_pop_renderer.visible = False
+year_dot_tfr_renderer.visible = False
+year_dot_mig_male_renderer.visible = False
+year_dot_mig_female_renderer.visible = False
+year_dot_dep_young_renderer.visible = False
+year_dot_dep_old_renderer.visible = False
+year_dot_dep_total_renderer.visible = False
 
 # ======================= CALLBACK LOGIC =========================
 
@@ -681,11 +757,17 @@ def _update_pyramid():
     pop_m, pop_f = male[idx, :], female[idx, :]
     ages_cat = list(AGES) + list(AGES)
     sex = ["Male"] * len(AGES) + ["Female"] * len(AGES)
-    values = np.concatenate([-pop_m, pop_f])
-    pop = np.concatenate([pop_m, pop_f])
 
-    age_pyr_source.data = {"age": ages_cat, "sex": sex, "value": values, "population": pop}
-    xmax = float(np.max(np.abs(values))) if len(values) > 0 else 1.0
+    # Use positive values for both male and female, store negatives only for positioning
+    values_display = np.concatenate([-pop_m, pop_f])  # For positioning (male left, female right)
+    pop = np.concatenate([pop_m, pop_f])  # For display (both positive)
+
+    age_pyr_source.data = {"age": ages_cat, "sex": sex, "value": values_display, "population": pop}
+
+    # Calculate max value but ensure it's at least 400,000 per side (don't zoom in tighter than this)
+    xmax = float(np.max(np.abs(values_display))) if len(values_display) > 0 else 1.0
+    xmax = max(xmax, 400000)  # Ensure minimum zoom level of 400,000 (prevents zooming in too far)
+
     pyramid_fig.x_range.start = -1.12 * xmax
     pyramid_fig.x_range.end = 1.12 * xmax
     pyramid_fig.title.text = f"Age Pyramid — {year_pick}"
@@ -718,30 +800,41 @@ def _update_projection():
     mask = ~np.isnan(anchor_years) & ~np.isnan(anchor_tfr)
     anchor_years, anchor_tfr = anchor_years[mask], anchor_tfr[mask]
 
-    # Start with full default table (includes historical years)
+    # Start with full default table (keeps historical years intact)
     anchor_table = dict(TFR_TABLE_DEFAULT[scenario_name])
 
-    # Overlay with user-editable anchors (only for BASE_YEAR and later)
+    # Overlay with user-editable anchors (restricted to EDITABLE_YEARS)
     if len(anchor_years) > 0:
         anchor_years = anchor_years.astype(int)
-        anchor_years[anchor_years < BASE_YEAR] = BASE_YEAR
         order = np.argsort(anchor_years)
         anchor_years, anchor_tfr = anchor_years[order], anchor_tfr[order]
-        # Update only the editable years
         for y, v in zip(anchor_years, anchor_tfr):
-            anchor_table[int(y)] = float(v)
+            y_int = int(y)
+            if y_int in EDITABLE_YEARS:
+                anchor_table[y_int] = float(v)
+
+    # For projection years >= BASE_YEAR, keep ONLY the 4 editable years,
+    # so the path becomes three straight line segments between them.
+    for y in list(anchor_table.keys()):
+        if y >= BASE_YEAR and y not in EDITABLE_YEARS:
+            del anchor_table[y]
 
     TFR_TABLE_EDITABLE[scenario_name] = dict(anchor_table)
+
 
     asfr_shapes, tfr_path, asfr_calibration = fertility_module(years, scenario_name, anchor_table)
     survM_time, survF_time = mortality_module(years, scenario_name)
 
-    child_weight = float(child_weight_slider.value)
-    ya_peak = float(ya_peak_age_slider.value)
-    ya_spread = float(ya_spread_slider.value)
+    #child_weight = float(child_weight_slider.value)
+    child_weight = float(0.35)
+    ya_peak = float(28)
+    ya_spread = float(6)
     mig_profile = age_profile_two_hump(child_weight, ya_peak, ya_spread)
 
-    netM_path, netF_path, mig_profile_used = migration_module(years, scenario_name, params["sex_split"], profile=mig_profile)
+    # For Custom scenario, use migration from the last active preset scenario
+    migration_scenario = LAST_PRESET_SCENARIO if scenario_name == "Custom" else scenario_name
+    migration_params = PDF_PARAMS[migration_scenario]
+    netM_path, netF_path, mig_profile_used = migration_module(years, migration_scenario, migration_params["sex_split"], profile=mig_profile)
     srb = float(srb_slider.value)
 
     proj = run_projection_pdf(
@@ -762,7 +855,20 @@ def _update_projection():
 
     tot_pop_source.data = {"year": display_years, "total": display_total.sum(axis=1) / 1_000_000}
     tfr_path_source.data = {"year": display_years, "tfr": proj["tfr"][display_mask]}
-    mig_source.data = {"year": display_years, "male": proj["netM"][display_mask], "female": proj["netF"][display_mask]}
+
+    # Calculate migration for all three preset scenarios for overlay lines
+    # (mig_source is no longer used - we display the three preset lines instead)
+    for preset_name in ["Low", "Medium", "High"]:
+        preset_params = PDF_PARAMS[preset_name]
+        netM_preset, netF_preset, _ = migration_module(years, preset_name, preset_params["sex_split"], profile=mig_profile)
+        mig_total_preset = netM_preset[display_mask] + netF_preset[display_mask]
+
+        if preset_name == "Low":
+            mig_low_source.data = {"year": display_years, "total": mig_total_preset}
+        elif preset_name == "Medium":
+            mig_medium_source.data = {"year": display_years, "total": mig_total_preset}
+        elif preset_name == "High":
+            mig_high_source.data = {"year": display_years, "total": mig_total_preset}
 
     y_w, o_w, t_w = dep_ratios(total)
     dep_source.data = {"year": display_years, "young": y_w[display_mask], "old": o_w[display_mask], "total": t_w[display_mask]}
@@ -805,25 +911,27 @@ def _update_projection():
     else:
         flow_diag_div.text = flow_msg
 
-    if 2070 in years:
+    # Only show 3% verification for preset scenarios (not Custom)
+    if scenario_name == "Custom":
+        check_2070_div.text = ""
+    elif 2070 in years:
         idx_2070 = int(np.where(years == 2070)[0][0])
         model_2070 = float(total[idx_2070, :].sum())
         target_2070 = PDF_TOTAL_2070[scenario_name]
         diff_pct = (model_2070 - target_2070) / target_2070
 
-        if abs(diff_pct) > 0.05:
+        if abs(diff_pct) > 0.03: #3%
             check_2070_div.text = (
                 f"<p style='color:#FF4136;'>"
-                f"⚠️ <b>2070 population deviates from PDF by {diff_pct * 100:.1f}%</b><br>"
+                f"<b>2070 population deviates from PDF by {diff_pct * 100:.1f}%</b><br>"
                 f"Model 2070 total ({scenario_name}): {model_2070 / 1_000_000:.2f}M<br>"
                 f"PDF 2070 total ({scenario_name}): {target_2070 / 1_000_000:.2f}M<br>"
-                f"This is more than the allowed ±5% tolerance."
                 f"</p>"
             )
         else:
             check_2070_div.text = (
                 f"<p style='color:#7FDB51;'>"
-                f"✅ 2070 population is within ±5% of the PDF:<br>"
+                f"2070 population is within ±3% of the PDF:<br>"
                 f"Model 2070 total: {model_2070 / 1_000_000:.2f}M<br>"
                 f"PDF 2070 total: {target_2070 / 1_000_000:.2f}M "
                 f"({diff_pct * 100:.1f}% difference)."
@@ -831,6 +939,9 @@ def _update_projection():
             )
     else:
         check_2070_div.text = "<p>No 2070 output in the current horizon, so the PDF sanity check is skipped.</p>"
+
+    # Update migration line colors based on active scenario
+    update_migration_line_colors()
 
 def update_projection(attr, old, new):
     _update_projection()
@@ -845,19 +956,31 @@ def on_scenario_change(attr, old, new):
 
     # Update TFR anchors to match the scenario
     if scenario_name in PRESET_SCENARIOS:
+        # Track which preset scenario is being selected
+        global LAST_PRESET_SCENARIO
+        LAST_PRESET_SCENARIO = scenario_name
+
         # For preset scenarios, reload from defaults
         tfr_table = dict(TFR_TABLE_DEFAULT[scenario_name])
         TFR_TABLE_EDITABLE[scenario_name] = tfr_table
+        # Reset SRB slider to default value for preset scenarios
+        srb_slider.value = 1.055
     else:
         # For Custom, use whatever is currently in EDITABLE
         tfr_table = TFR_TABLE_EDITABLE.get(scenario_name, TFR_TABLE_DEFAULT["Medium"])
 
-    # Filter to only show years from BASE_YEAR onwards
-    years_list = [y for y in sorted(tfr_table.keys()) if y >= BASE_YEAR]
-    tfr_list = [tfr_table[y] for y in years_list]
+    # Always create anchors at the 4 editable years, using interpolation
+    years_list = EDITABLE_YEARS.copy()
+    tfr_list = list(interp_from_table(years_list, tfr_table))
 
-    # Update the data source
-    tfr_anchors_source.data = {"year": years_list, "tfr": tfr_list}
+    # Mark this update as a scenario change by adding a flag to the data itself
+    # The JS callback will check for this flag and allow x-axis changes
+    # Flag array must match length of data arrays (Bokeh requirement)
+    tfr_anchors_source.data = {
+        "year": years_list,
+        "tfr": tfr_list,
+        "_scenario_change": [True] * len(years_list)  # Flag to tell JS this is intentional
+    }
 
     # Run projection
     _update_projection()
@@ -875,6 +998,13 @@ def on_tfr_manual_change(attr, old, new):
     if STATE.get("changing_scenario", False):
         return
 
+    # Skip if this is a scenario change (check for the flag)
+    if new.get("_scenario_change"):
+        return
+
+    # Check for user drag flag from JS (happens after snap-back)
+    is_user_drag = new.get("_user_drag", [False])[0] if new.get("_user_drag") else False
+
     # Check if the TFR values actually changed (not just initialization)
     old_tfr = old.get("tfr", []) if old else []
     new_tfr = new.get("tfr", [])
@@ -887,13 +1017,20 @@ def on_tfr_manual_change(attr, old, new):
             return
 
         # Check if values are different (with tolerance for floating point)
-        if not np.allclose(old_tfr, new_tfr, atol=1e-3):
+        # OR if this is explicitly flagged as a user drag
+        if is_user_drag or not np.allclose(old_tfr, new_tfr, atol=1e-3):
             # Values changed - update projection
             # If in preset scenario, switch to Custom first
             if CURRENT_SCENARIO["name"] in PRESET_SCENARIOS:
                 # Save the current edited values to Custom
                 years = new.get("year", [])
-                TFR_TABLE_EDITABLE["Custom"] = {int(y): float(v) for y, v in zip(years, new_tfr)}
+                # Filter out the flag keys when saving
+                clean_tfr = [v for v in new_tfr]
+                TFR_TABLE_EDITABLE["Custom"] = {int(y): float(v) for y, v in zip(years, clean_tfr)}
+
+                # Track which preset we're switching from
+                global LAST_PRESET_SCENARIO
+                LAST_PRESET_SCENARIO = CURRENT_SCENARIO["name"]
 
                 # Switch to Custom scenario (index 3 in SCENARIOS list)
                 CURRENT_SCENARIO["name"] = "Custom"
@@ -902,16 +1039,223 @@ def on_tfr_manual_change(attr, old, new):
             # Always run projection update when TFR values change
             _update_projection()
 
+def update_migration_line_colors():
+    """Update migration line colors based on active scenario"""
+    scenario_name = CURRENT_SCENARIO["name"]
+
+    # For Custom scenario, use the last active preset scenario's migration
+    if scenario_name == "Custom":
+        active_scenario = LAST_PRESET_SCENARIO
+    else:
+        active_scenario = scenario_name
+
+    # Define colors for active and inactive lines
+    active_color = "#1f77b4"  # Bokeh blue
+    inactive_color = "gray"
+    active_alpha = 1.0
+    inactive_alpha = 0.3
+
+    # Update Low line
+    if active_scenario == "Low":
+        mig_low_line.glyph.line_color = active_color
+        mig_low_line.glyph.line_alpha = active_alpha
+        mig_low_line.glyph.line_width = 2
+    else:
+        mig_low_line.glyph.line_color = inactive_color
+        mig_low_line.glyph.line_alpha = inactive_alpha
+        mig_low_line.glyph.line_width = 2
+
+    # Update Medium line
+    if active_scenario == "Medium":
+        mig_medium_line.glyph.line_color = active_color
+        mig_medium_line.glyph.line_alpha = active_alpha
+        mig_medium_line.glyph.line_width = 2
+    else:
+        mig_medium_line.glyph.line_color = inactive_color
+        mig_medium_line.glyph.line_alpha = inactive_alpha
+        mig_medium_line.glyph.line_width = 2
+
+    # Update High line
+    if active_scenario == "High":
+        mig_high_line.glyph.line_color = active_color
+        mig_high_line.glyph.line_alpha = active_alpha
+        mig_high_line.glyph.line_width = 2
+    else:
+        mig_high_line.glyph.line_color = inactive_color
+        mig_high_line.glyph.line_alpha = inactive_alpha
+        mig_high_line.glyph.line_width = 2
+
+def update_year_indicators(year):
+    """Update the year indicator line and dots to show current animation year"""
+    # Update span locations
+    year_span_tot_pop.location = year
+    year_span_tfr.location = year
+    year_span_mig.location = year
+    year_span_dep.location = year
+
+    # Total population dot - use data source years to find index
+    if len(tot_pop_source.data["year"]) > 0:
+        display_years = np.array(tot_pop_source.data["year"])
+        if year in display_years:
+            idx = int(np.where(display_years == year)[0][0])
+            total_pop = tot_pop_source.data["total"][idx]
+            year_dot_tot_pop_source.data = {"x": [year], "y": [total_pop]}
+
+    # TFR dot
+    if len(tfr_path_source.data["year"]) > 0:
+        display_years = np.array(tfr_path_source.data["year"])
+        if year in display_years:
+            idx = int(np.where(display_years == year)[0][0])
+            tfr_val = tfr_path_source.data["tfr"][idx]
+            year_dot_tfr_source.data = {"x": [year], "y": [tfr_val]}
+
+    # Migration dot - show on the active preset line
+    scenario_name = CURRENT_SCENARIO["name"]
+    active_mig_scenario = LAST_PRESET_SCENARIO if scenario_name == "Custom" else scenario_name
+
+    # Select the appropriate data source based on active scenario
+    if active_mig_scenario == "Low":
+        active_mig_source = mig_low_source
+    elif active_mig_scenario == "Medium":
+        active_mig_source = mig_medium_source
+    elif active_mig_scenario == "High":
+        active_mig_source = mig_high_source
+    else:
+        active_mig_source = mig_medium_source  # Fallback to Medium
+
+    if len(active_mig_source.data["year"]) > 0:
+        display_years = np.array(active_mig_source.data["year"])
+        if year in display_years:
+            idx = int(np.where(display_years == year)[0][0])
+            mig_total = active_mig_source.data["total"][idx]
+            year_dot_mig_male_source.data = {"x": [year], "y": [mig_total]}
+
+    # Dependency ratio dots
+    if len(dep_source.data["year"]) > 0:
+        display_years = np.array(dep_source.data["year"])
+        if year in display_years:
+            idx = int(np.where(display_years == year)[0][0])
+            dep_young = dep_source.data["young"][idx]
+            dep_old = dep_source.data["old"][idx]
+            dep_total = dep_source.data["total"][idx]
+            year_dot_dep_young_source.data = {"x": [year], "y": [dep_young]}
+            year_dot_dep_old_source.data = {"x": [year], "y": [dep_old]}
+            year_dot_dep_total_source.data = {"x": [year], "y": [dep_total]}
+
+def animate_pyramid():
+    """Advance the pyramid year by 1 each time this is called"""
+    current_year = int(pyr_year_slider.value)
+    end_year = int(pyr_year_slider.end)
+
+    if current_year < end_year:
+        pyr_year_slider.value = current_year + 1
+        # Update pyramid and year indicators
+        _update_pyramid()
+        update_year_indicators(current_year + 1)
+    else:
+        # Reached the end, stop animation
+        stop_animation()
+
+def start_animation():
+    """Start the pyramid animation"""
+    ANIMATION_STATE["playing"] = True
+    pyr_play_button.label = "⏸ Pause"
+    pyr_play_button.button_type = "warning"
+
+    # Show year indicators
+    year_span_tot_pop.visible = True
+    year_span_tfr.visible = True
+    year_span_mig.visible = True
+    year_span_dep.visible = True
+
+    year_dot_tot_pop_renderer.visible = True
+    year_dot_tfr_renderer.visible = True
+    year_dot_mig_male_renderer.visible = True  # Now showing total migration
+    year_dot_dep_young_renderer.visible = True
+    year_dot_dep_old_renderer.visible = True
+    year_dot_dep_total_renderer.visible = True
+
+    # Initialize indicators to current year
+    update_year_indicators(int(pyr_year_slider.value))
+
+    # Add periodic callback
+    ANIMATION_STATE["callback_id"] = curdoc().add_periodic_callback(animate_pyramid, 140) #ms of delay
+
+def stop_animation():
+    """Stop the pyramid animation"""
+    ANIMATION_STATE["playing"] = False
+    pyr_play_button.label = "▶ Play"
+    pyr_play_button.button_type = "success"
+
+    # Hide year indicators
+    year_span_tot_pop.visible = False
+    year_span_tfr.visible = False
+    year_span_mig.visible = False
+    year_span_dep.visible = False
+
+    year_dot_tot_pop_renderer.visible = False
+    year_dot_tfr_renderer.visible = False
+    year_dot_mig_male_renderer.visible = False  # Now showing total migration
+    year_dot_dep_young_renderer.visible = False
+    year_dot_dep_old_renderer.visible = False
+    year_dot_dep_total_renderer.visible = False
+
+    # Remove periodic callback if it exists
+    if ANIMATION_STATE["callback_id"] is not None:
+        curdoc().remove_periodic_callback(ANIMATION_STATE["callback_id"])
+        ANIMATION_STATE["callback_id"] = None
+
+def toggle_play_pause():
+    """Toggle between play and pause states"""
+    if ANIMATION_STATE["playing"]:
+        stop_animation()
+    else:
+        # If at the end (year 100 or max year), reset to start
+        current_year = int(pyr_year_slider.value)
+        end_year = int(pyr_year_slider.end)
+
+        if current_year >= end_year:
+            pyr_year_slider.value = int(pyr_year_slider.start)
+
+        start_animation()
+
+def on_srb_change(attr, old, new):
+    """Handle SRB slider change - auto-switch to Custom scenario"""
+    # Skip during initialization
+    if STATE.get("initializing", False):
+        return
+
+    # If in a preset scenario, switch to Custom
+    if CURRENT_SCENARIO["name"] in PRESET_SCENARIOS:
+        # Track which preset we're switching from
+        global LAST_PRESET_SCENARIO
+        LAST_PRESET_SCENARIO = CURRENT_SCENARIO["name"]
+
+        CURRENT_SCENARIO["name"] = "Custom"
+        scenario_buttons.active = 3
+
+    # Update projection
+    _update_projection()
+
 # ======================= WIRING CALLBACKS =========================
 
-for w in [csv_input, last_year_slider, srb_slider, child_weight_slider, ya_peak_age_slider, ya_spread_slider]:
-    w.on_change("value", update_projection)
+# TextInput triggers on value (when user presses enter or loses focus)
+csv_input.on_change("value", update_projection)
+
+# Last year slider triggers on value_throttled (only when user releases)
+last_year_slider.on_change("value_throttled", update_projection)
+
+# SRB slider triggers on value_throttled and auto-switches to Custom
+srb_slider.on_change("value_throttled", on_srb_change)
 
 # Connect scenario button group
 scenario_buttons.on_change("active", on_scenario_change)
 
-pyr_year_slider.on_change("value", update_pyramid)
+pyr_year_slider.on_change("value_throttled", update_pyramid)
 tfr_anchors_source.on_change("data", on_tfr_manual_change)
+
+# Connect play/pause button
+pyr_play_button.on_click(toggle_play_pause)
 
 # Initial projection
 _update_projection()
@@ -927,14 +1271,12 @@ sidebar = column(
     Div(text="<hr><h2>Scenarios</h2>"),
     Div(text="<p style='margin-bottom: 12px;'>Select a scenario or customize TFR values.</p>"),
     scenario_buttons,
-    Div(text="<p style='font-size: 0.9rem; margin-top: 12px; color: var(--dashboard-text-muted);'>💡 Dragging TFR anchors auto-switches to Custom</p>"),
+    Div(text="<p style='font-size: 0.9rem; margin-top: 12px; color: var(--dashboard-text-muted);'>Dragging TFR anchors auto-switches to Custom</p>"),
     Div(text="<hr><h2>Fertility</h2>"),
     srb_slider,
-    Div(text="<hr><h2>Net migration</h2>"),
-    Div(text="<p>Totals follow PDF scenario summary; age pattern uses a configurable two-hump profile.</p>"),
-    child_weight_slider,
-    ya_peak_age_slider,
-    ya_spread_slider,
+    Div(text="<hr><h2>Diagnostics</h2>"),
+    flow_diag_div,
+    check_2070_div,
     sizing_mode="fixed",
     width=360,
 )
@@ -970,9 +1312,10 @@ charts_row_2 = row(
 )
 
 # Wrap Age Pyramid in a container
+pyramid_controls = row(pyr_year_slider, pyr_play_button, sizing_mode="stretch_width")
 pyramid_container = column(
     Div(text="<h2>Age pyramid (male left, female right)</h2>"),
-    pyr_year_slider,
+    pyramid_controls,
     pyramid_fig,
     sizing_mode="stretch_width",
 )
@@ -982,16 +1325,12 @@ main = column(
     metrics_row,
     scenario_caption_div,
     Div(text="<hr>"),
-    charts_row_1,
-    Div(text="<hr>"),
     Div(text="<h2>Assumptions (paths)</h2>"),
     charts_row_2,
     Div(text="<hr>"),
-    pyramid_container,
+    charts_row_1,
     Div(text="<hr>"),
-    Div(text="<h2>🔍 DIAGNOSTIC: Population Flow Analysis</h2>"),
-    flow_diag_div,
-    check_2070_div,
+    pyramid_container,
     Div(text="<hr>"),
     sizing_mode="stretch_width",     # FIXED (was stretch_both)
 )
