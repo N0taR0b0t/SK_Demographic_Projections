@@ -476,8 +476,6 @@ def dep_ratios(pop):
 title_div = Div(text="""
 <h1 style="margin-bottom:0.2rem;">Population Projections for Korea — Interactive Bokeh Dashboard</h1>
 <p style="margin-top:0;">
-Assumptions use the PDF tables for TFR, life expectancy at birth, and net migration scenario anchors.
-Base year fixed at 2025; horizon extended to 2100.
 </p>
 """)
 
@@ -1293,7 +1291,7 @@ metrics_row = row(
 # TFR figure
 tfr_editor_block = column(
     Div(text="<h3>Total Fertility Rate (TFR)</h3>"),
-    Div(text="<p>Drag the orange anchor points to adjust TFR values. The year positions are locked—if you drag horizontally, the points will snap back to their fixed years. The interpolated TFR path and projections update automatically.</p>"),
+    Div(text="<p>Drag the orange points to adjust TFR values.</p>"),
     tfr_fig,
     sizing_mode="stretch_width",
 )
