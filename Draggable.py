@@ -1324,14 +1324,14 @@ main = column(
     title_div,
     metrics_row,
     scenario_caption_div,
-    Div(text="<hr>"),
+    Div(text="<br>"),
     Div(text="<h2>Assumptions (paths)</h2>"),
     charts_row_2,
-    Div(text="<hr>"),
+    Div(text="<br>"),
     charts_row_1,
-    Div(text="<hr>"),
+    Div(text="<br>"),
     pyramid_container,
-    Div(text="<hr>"),
+    Div(text="<br>"),
     sizing_mode="stretch_width",     # FIXED (was stretch_both)
 )
 main.css_classes = ["dashboard-main"]
