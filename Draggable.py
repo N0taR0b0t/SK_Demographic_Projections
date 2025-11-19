@@ -11,7 +11,7 @@ from bokeh.models import (
     ColumnDataSource, Slider, Select, TextInput, Div, Button, RadioButtonGroup,
     NumberFormatter, Range1d,
     InlineStyleSheet, NumeralTickFormatter, HoverTool, PointDrawTool, CustomJS,
-    FuncTickFormatter, Span,
+    CustomJSTickFormatter, Span,
 )
 from bokeh.plotting import figure
 from bokeh.themes import Theme
@@ -474,7 +474,7 @@ def dep_ratios(pop):
 # ======================= BOKEH WIDGETS & SOURCES =========================
 
 title_div = Div(text="""
-<h1 style="margin-bottom:0.2rem;">Population Projections for Korea — Interactive Bokeh Dashboard</h1>
+<h1 style="margin-bottom:0.2rem;">Interactive Population Projections for South Korea</h1>
 <p style="margin-top:0;">
 </p>
 """)
@@ -629,7 +629,7 @@ tfr_fig.toolbar.active_tap = tfr_draw_tool
 
 
 mig_fig = figure(
-    title="Net International Migration (per year)",
+    title="Net International Migration",
     x_axis_label="Year",
     y_axis_label="People",
     height=396,
@@ -659,7 +659,7 @@ pyramid_fig.y_range.range_padding = 0.05
 pyramid_fig.x_range = Range1d(-1, 1)
 
 # Custom tick formatter to show absolute values (no negative signs)
-pyramid_fig.xaxis.formatter = FuncTickFormatter(code="""
+pyramid_fig.xaxis.formatter = CustomJSTickFormatter(code="""
     return Math.abs(tick).toLocaleString();
 """)
 
@@ -776,7 +776,7 @@ def update_pyramid(attr, old, new):
 def _update_projection():
     try:
         pop0 = load_base_population(csv_input.value)
-        flow_msg = f"<p style='color:#7FDB51;'>Base population loaded from {DATA_BASE_YEAR} (calculations include {DATA_BASE_YEAR}-{BASE_YEAR-1} as historical baseline, displayed from {BASE_YEAR}).</p>"
+        #flow_msg = f"<p style='color:#7FDB51;'>Base population loaded from {DATA_BASE_YEAR} (calculations include {DATA_BASE_YEAR}-{BASE_YEAR-1} as historical baseline, displayed from {BASE_YEAR}).</p>"
     except Exception as e:
         flow_diag_div.text = f"<p style='color:#FF4136;'>Failed to read CSV: {e}</p>"
         return
@@ -897,13 +897,13 @@ def _update_projection():
         total_deaths_estimated = base_pop_total + total_births + total_migration - final_pop
 
         flow_diag_div.text = (
-            f"{flow_msg}"
+            #f"{flow_msg}"
             f"<p><b>Cumulative flows ({BASE_YEAR}-{display_years[-1]}):</b><br>"
             f"Total births: {total_births:,.0f}<br>"
             f"Total deaths (estimated): {total_deaths_estimated:,.0f}<br>"
             f"Total net migration: {total_migration:,.0f}</p>"
             f"<p><b>Final year ({display_years[-1]}) population:</b> {final_pop:,.0f} people<br>"
-            f"Accounting check: {base_pop_total:,.0f} + {total_births:,.0f} "
+            #f"Accounting check: {base_pop_total:,.0f} + {total_births:,.0f} "
             f"- {total_deaths_estimated:,.0f} + {total_migration:,.0f} = {final_pop:,.0f}</p>"
         )
     else:
@@ -1280,13 +1280,13 @@ sidebar = column(
 )
 sidebar.css_classes = ["dashboard-sidebar"]
 
-metrics_row = row(
-    column(base_pop_div),
-    column(last_pop_div),
-    column(tfr_metric_div),
-    column(mig_metric_div),
-    sizing_mode="stretch_width",
-)
+#metrics_row = row(
+#    column(base_pop_div),
+#    column(last_pop_div),
+#    column(tfr_metric_div),
+#    column(mig_metric_div),
+#    sizing_mode="stretch_width",
+#)
 
 # TFR figure
 tfr_editor_block = column(
@@ -1305,7 +1305,7 @@ charts_row_1 = row(
 
 charts_row_2 = row(
     column(tfr_editor_block, sizing_mode="stretch_width"),
-    column(Div(text="<h3>Net International Migration (per year)</h3>"), mig_fig, sizing_mode="stretch_width"),
+    column(Div(text="<h3>Net International Migration</h3>"), mig_fig, sizing_mode="stretch_width"),
     sizing_mode="stretch_width",
 )
 
@@ -1320,9 +1320,8 @@ pyramid_container = column(
 
 main = column(
     title_div,
-    metrics_row,
+    #metrics_row,
     scenario_caption_div,
-    Div(text="<br>"),
     Div(text="<h2>Assumptions (paths)</h2>"),
     charts_row_2,
     Div(text="<br>"),
