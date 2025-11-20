@@ -608,7 +608,6 @@ tot_pop_hover = HoverTool(tooltips=[("Year", "@year{0}"), ("Population (millions
 tot_pop_fig.add_tools(tot_pop_hover)
 
 tfr_fig = figure(
-    title="Total Fertility Rate (TFR)",
     x_axis_label="Year",
     y_axis_label="Children per woman",
     height=380,
@@ -631,7 +630,6 @@ tfr_fig.toolbar.active_tap = tfr_draw_tool
 
 
 mig_fig = figure(
-    title="Net International Migration",
     x_axis_label="Year",
     y_axis_label="People",
     height=380,
@@ -1279,7 +1277,7 @@ sidebar = column(
     check_2070_div,
     sizing_mode="fixed",
     width=270,
-    height=1200,
+    height=750,
 )
 sidebar.css_classes = ["dashboard-sidebar"]
 
@@ -1324,7 +1322,6 @@ main = column(
     title_div,
     #metrics_row,
     scenario_caption_div,
-    Div(text="<h2>Assumptions (paths)</h2>"),
     charts_row_2,
     #Div(text="<br>"),
     charts_row_1,
