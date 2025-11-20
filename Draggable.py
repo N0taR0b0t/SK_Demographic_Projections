@@ -179,7 +179,7 @@ body {
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.5);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.9);
-  padding: 16px 18px;
+  padding: 16px 18px 16px 12px;
 }
 
 .dashboard-main {
@@ -485,7 +485,7 @@ base_year_div = Div(text=f"<b>Base year:</b> {BASE_YEAR}")
 last_year_slider = Slider(title="Last year (max 2100)", start=FINAL_YEAR_MIN, end=FINAL_YEAR_MAX, step=1, value=FINAL_YEAR_DEFAULT)
 
 # Scenario radio button group
-scenario_buttons = RadioButtonGroup(labels=["Low", "Medium", "High", "Custom"], active=1, width=320)
+scenario_buttons = RadioButtonGroup(labels=["Low", "Medium", "High", "Custom"], active=1, width=240)
 scenario_buttons.css_classes = ["scenario-radio-group"]
 
 srb_slider = Slider(title="Sex ratio at birth (M/F)", start=1.00, end=1.10, step=0.001, value=1.055)
@@ -598,7 +598,7 @@ tot_pop_fig = figure(
     title="Total Population",
     x_axis_label="Year",
     y_axis_label="Population (millions)",
-    height=450,
+    height=405,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
 )
@@ -617,9 +617,9 @@ tfr_fig = figure(
 )
 tfr_fig.line("year", "tfr", source=tfr_path_source, line_width=2)
 # Add invisible larger circles as hit targets for easier dragging
-tfr_hit_renderer = tfr_fig.circle("year", "tfr", source=tfr_anchors_source, size=25, color="orange", alpha=0.0)
+tfr_hit_renderer = tfr_fig.scatter("year", "tfr", source=tfr_anchors_source, size=25, color="orange", alpha=0.0)
 # Add visible smaller circles on top
-tfr_points_renderer = tfr_fig.circle("year", "tfr", source=tfr_anchors_source, size=10, color="orange")
+tfr_points_renderer = tfr_fig.scatter("year", "tfr", source=tfr_anchors_source, size=10, color="orange")
 tfr_hover = HoverTool(tooltips=[("Year", "@year{0}"), ("TFR", "@tfr{0.000}")], mode="vline")
 tfr_fig.add_tools(tfr_hover)
 
@@ -653,7 +653,7 @@ pyramid_fig = figure(
     title="Age Pyramid",
     x_axis_label="Population (people)",
     y_axis_label="Age (years)",
-    height=550,
+    height=495,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
 )
@@ -686,7 +686,7 @@ dep_fig = figure(
     title="Dependency Ratios",
     x_axis_label="Year",
     y_axis_label="Ratio",
-    height=432,
+    height=389,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
 )
@@ -721,13 +721,13 @@ year_dot_dep_old_source = ColumnDataSource(data={"x": [], "y": []})
 year_dot_dep_total_source = ColumnDataSource(data={"x": [], "y": []})
 
 # Add circle glyphs for intersection dots (store renderers for visibility control)
-year_dot_tot_pop_renderer = tot_pop_fig.circle("x", "y", source=year_dot_tot_pop_source, size=8, color="white", line_color="black", line_width=1)
-year_dot_tfr_renderer = tfr_fig.circle("x", "y", source=year_dot_tfr_source, size=8, color="white", line_color="black", line_width=1)
-year_dot_mig_male_renderer = mig_fig.circle("x", "y", source=year_dot_mig_male_source, size=8, color="white", line_color="black", line_width=1)
-year_dot_mig_female_renderer = mig_fig.circle("x", "y", source=year_dot_mig_female_source, size=8, color="white", line_color="black", line_width=1)
-year_dot_dep_young_renderer = dep_fig.circle("x", "y", source=year_dot_dep_young_source, size=8, color="white", line_color="black", line_width=1)
-year_dot_dep_old_renderer = dep_fig.circle("x", "y", source=year_dot_dep_old_source, size=8, color="white", line_color="black", line_width=1)
-year_dot_dep_total_renderer = dep_fig.circle("x", "y", source=year_dot_dep_total_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_tot_pop_renderer = tot_pop_fig.scatter("x", "y", source=year_dot_tot_pop_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_tfr_renderer = tfr_fig.scatter("x", "y", source=year_dot_tfr_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_mig_male_renderer = mig_fig.scatter("x", "y", source=year_dot_mig_male_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_mig_female_renderer = mig_fig.scatter("x", "y", source=year_dot_mig_female_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_dep_young_renderer = dep_fig.scatter("x", "y", source=year_dot_dep_young_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_dep_old_renderer = dep_fig.scatter("x", "y", source=year_dot_dep_old_source, size=8, color="white", line_color="black", line_width=1)
+year_dot_dep_total_renderer = dep_fig.scatter("x", "y", source=year_dot_dep_total_source, size=8, color="white", line_color="black", line_width=1)
 
 # Initially hide all renderers
 year_dot_tot_pop_renderer.visible = False
@@ -1278,7 +1278,8 @@ sidebar = column(
     flow_diag_div,
     check_2070_div,
     sizing_mode="fixed",
-    width=360,
+    width=270,
+    height=1200,
 )
 sidebar.css_classes = ["dashboard-sidebar"]
 
@@ -1327,7 +1328,7 @@ main = column(
     charts_row_2,
     #Div(text="<br>"),
     charts_row_1,
-    Div(text="<br>"),
+    #Div(text="<br>"),
     pyramid_container,
     Div(text="<br>"),
     sizing_mode="stretch_width",     # FIXED (was stretch_both)
