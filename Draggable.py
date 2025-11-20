@@ -1277,7 +1277,7 @@ sidebar = column(
     check_2070_div,
     sizing_mode="fixed",
     width=270,
-    height=750,
+    height=800,
 )
 sidebar.css_classes = ["dashboard-sidebar"]
 
