@@ -20,7 +20,7 @@ from bokeh.palettes import Spectral4
 
 # ======================= THEME & CONSTANTS =======================
 
-curdoc().title = "Population Projections for Korea — Bokeh Dashboard"
+curdoc().title = "Population Projections for Korea - Bokeh Dashboard"
 curdoc().template = "templates/dark_base.html"
 
 # Add extra CSS via template variables as backup
@@ -613,6 +613,7 @@ tfr_fig = figure(
     height=380,
     sizing_mode="stretch_width",
     tools="pan,wheel_zoom,box_zoom,reset,save",
+    y_range=Range1d(0.25, 1.5),
 )
 tfr_fig.line("year", "tfr", source=tfr_path_source, line_width=2)
 # Add invisible larger circles as hit targets for easier dragging
@@ -768,7 +769,7 @@ def _update_pyramid():
 
     pyramid_fig.x_range.start = -1.12 * xmax
     pyramid_fig.x_range.end = 1.12 * xmax
-    pyramid_fig.title.text = f"Age Pyramid — {year_pick}"
+    pyramid_fig.title.text = f"Age Pyramid - {year_pick}"
 
 def update_pyramid(attr, old, new):
     _update_pyramid()
