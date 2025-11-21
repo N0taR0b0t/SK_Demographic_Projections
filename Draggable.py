@@ -930,14 +930,14 @@ def _update_projection():
         else:
             check_2070_div.text = (
                 f"<p style='color:#7FDB51;'>"
-                f"2070 population is within ±3% of the PDF:<br>"
+                f"2070 population is within ±3% of offical projections:<br>"
                 f"Model 2070 total: {model_2070 / 1_000_000:.2f}M<br>"
                 f"PDF 2070 total: {target_2070 / 1_000_000:.2f}M "
                 f"({diff_pct * 100:.1f}% difference)."
                 f"</p>"
             )
     else:
-        check_2070_div.text = "<p>No 2070 output in the current horizon, so the PDF sanity check is skipped.</p>"
+        check_2070_div.text = "<p>Skipping sanity check</p>"
 
     # Update migration line colors based on active scenario
     update_migration_line_colors()
@@ -1270,7 +1270,7 @@ sidebar = column(
     Div(text="<hr><h2>Scenarios</h2>"),
     Div(text="<p style='margin-bottom: 12px;'>Select a scenario or customize TFR values.</p>"),
     scenario_buttons,
-    Div(text="<p style='font-size: 0.9rem; margin-top: 12px; color: var(--dashboard-text-muted);'>Dragging TFR anchors auto-switches to Custom</p>"),
+    Div(text="<p style='font-size: 0.9rem; margin-top: 12px; color: var(--dashboard-text-muted);'></p>"),
     Div(text="<hr><h2>Fertility</h2>"),
     srb_slider,
     Div(text="<hr><h2>Diagnostics</h2>"),
