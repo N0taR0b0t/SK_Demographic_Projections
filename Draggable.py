@@ -650,7 +650,7 @@ mig_fig.add_tools(mig_hover)
 
 pyramid_fig = figure(
     title="Age Pyramid",
-    x_axis_label="Population (people)",
+    x_axis_label="Male        Female",
     y_axis_label="Age (years)",
     height=495,
     sizing_mode="stretch_width",
@@ -693,9 +693,6 @@ dep_fig.line("year", "young", source=dep_source, line_width=2, legend_label="You
 dep_fig.line("year", "old", source=dep_source, line_width=2, line_dash="dashed", legend_label="Old/Wkg")
 dep_fig.line("year", "total", source=dep_source, line_width=2, line_dash="dotdash", legend_label="Total/Wkg")
 dep_fig.legend.location = "top_left"
-dep_hover = HoverTool(tooltips=[("Year", "@year{0}"), ("Young/Wkg", "@young{0.000}"), ("Old/Wkg", "@old{0.000}"), ("Total/Wkg", "@total{0.000}")], mode="vline")
-dep_fig.add_tools(dep_hover)
-
 # ======================= YEAR INDICATOR (for animation) =========================
 
 # Vertical line spans for each time-series figure
@@ -912,7 +909,10 @@ def _update_projection():
 
     # Only show 3% verification for preset scenarios (not Custom)
     if scenario_name == "Custom":
-        check_2070_div.text = ""
+        check_2070_div.text = (
+            f"<p style='color:#FFFFFF;'>"
+            f"Custom scenario, skipping population check<br>"
+        )
     elif 2070 in years:
         idx_2070 = int(np.where(years == 2070)[0][0])
         model_2070 = float(total[idx_2070, :].sum())
@@ -924,7 +924,7 @@ def _update_projection():
                 f"<p style='color:#FF4136;'>"
                 f"<b>2070 population deviates from PDF by {diff_pct * 100:.1f}%</b><br>"
                 f"Model 2070 total ({scenario_name}): {model_2070 / 1_000_000:.2f}M<br>"
-                f"PDF 2070 total ({scenario_name}): {target_2070 / 1_000_000:.2f}M<br>"
+                f"2070 total ({scenario_name}): {target_2070 / 1_000_000:.2f}M<br>"
                 f"</p>"
             )
         else:
@@ -932,12 +932,10 @@ def _update_projection():
                 f"<p style='color:#7FDB51;'>"
                 f"2070 population is within ±3% of offical projections:<br>"
                 f"Model 2070 total: {model_2070 / 1_000_000:.2f}M<br>"
-                f"PDF 2070 total: {target_2070 / 1_000_000:.2f}M "
+                f"2070 total: {target_2070 / 1_000_000:.2f}M "
                 f"({diff_pct * 100:.1f}% difference)."
                 f"</p>"
             )
-    else:
-        check_2070_div.text = "<p>Skipping sanity check</p>"
 
     # Update migration line colors based on active scenario
     update_migration_line_colors()
@@ -1273,12 +1271,12 @@ sidebar = column(
     Div(text="<p style='font-size: 0.9rem; margin-top: 12px; color: var(--dashboard-text-muted);'></p>"),
     Div(text="<hr><h2>Fertility</h2>"),
     srb_slider,
-    Div(text="<hr><h2>Diagnostics</h2>"),
-    flow_diag_div,
+    Div(text="<hr><h2>Model Validity</h2>"),
+    #flow_diag_div,
     check_2070_div,
     sizing_mode="fixed",
     width=270,
-    height=800,
+    height=600,
 )
 sidebar.css_classes = ["dashboard-sidebar"]
 
