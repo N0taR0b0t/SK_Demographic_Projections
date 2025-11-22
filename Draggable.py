@@ -751,17 +751,25 @@ def _update_pyramid():
 
     idx = int(year_pick - years[0])
     pop_m, pop_f = male[idx, :], female[idx, :]
-    ages_cat = list(AGES) + list(AGES)
-    sex = ["Male"] * len(AGES) + ["Female"] * len(AGES)
+
+    # Pre-allocate arrays for better performance
+    num_ages = len(AGES)
+    ages_cat = np.concatenate([AGES, AGES])
+    sex = ["Male"] * num_ages + ["Female"] * num_ages
 
     # Use positive values for both male and female, store negatives only for positioning
-    values_display = np.concatenate([-pop_m, pop_f])  # For positioning (male left, female right)
-    pop = np.concatenate([pop_m, pop_f])  # For display (both positive)
+    values_display = np.empty(num_ages * 2)
+    values_display[:num_ages] = -pop_m
+    values_display[num_ages:] = pop_f
 
-    age_pyr_source.data = {"age": ages_cat, "sex": sex, "value": values_display, "population": pop}
+    pop = np.empty(num_ages * 2)
+    pop[:num_ages] = pop_m
+    pop[num_ages:] = pop_f
+
+    age_pyr_source.data = {"age": ages_cat.tolist(), "sex": sex, "value": values_display.tolist(), "population": pop.tolist()}
 
     # Calculate max value but ensure it's at least 400,000 per side (don't zoom in tighter than this)
-    xmax = float(np.max(np.abs(values_display))) if len(values_display) > 0 else 1.0
+    xmax = float(max(np.max(pop_m), np.max(pop_f)))
     xmax = max(xmax, 400000)  # Ensure minimum zoom level of 400,000 (prevents zooming in too far)
 
     pyramid_fig.x_range.start = -1.12 * xmax
@@ -1090,19 +1098,19 @@ def update_year_indicators(year):
     year_span_mig.location = year
     year_span_dep.location = year
 
-    # Total population dot - use data source years to find index
-    if len(tot_pop_source.data["year"]) > 0:
-        display_years = np.array(tot_pop_source.data["year"])
-        if year in display_years:
-            idx = int(np.where(display_years == year)[0][0])
+    # Total population dot - use cached arrays for faster lookup
+    tot_years = tot_pop_source.data.get("year", [])
+    if len(tot_years) > 0 and year >= tot_years[0] and year <= tot_years[-1]:
+        idx = int(year - tot_years[0])
+        if idx < len(tot_years) and tot_years[idx] == year:
             total_pop = tot_pop_source.data["total"][idx]
             year_dot_tot_pop_source.data = {"x": [year], "y": [total_pop]}
 
     # TFR dot
-    if len(tfr_path_source.data["year"]) > 0:
-        display_years = np.array(tfr_path_source.data["year"])
-        if year in display_years:
-            idx = int(np.where(display_years == year)[0][0])
+    tfr_years = tfr_path_source.data.get("year", [])
+    if len(tfr_years) > 0 and year >= tfr_years[0] and year <= tfr_years[-1]:
+        idx = int(year - tfr_years[0])
+        if idx < len(tfr_years) and tfr_years[idx] == year:
             tfr_val = tfr_path_source.data["tfr"][idx]
             year_dot_tfr_source.data = {"x": [year], "y": [tfr_val]}
 
@@ -1120,18 +1128,18 @@ def update_year_indicators(year):
     else:
         active_mig_source = mig_medium_source  # Fallback to Medium
 
-    if len(active_mig_source.data["year"]) > 0:
-        display_years = np.array(active_mig_source.data["year"])
-        if year in display_years:
-            idx = int(np.where(display_years == year)[0][0])
+    mig_years = active_mig_source.data.get("year", [])
+    if len(mig_years) > 0 and year >= mig_years[0] and year <= mig_years[-1]:
+        idx = int(year - mig_years[0])
+        if idx < len(mig_years) and mig_years[idx] == year:
             mig_total = active_mig_source.data["total"][idx]
             year_dot_mig_male_source.data = {"x": [year], "y": [mig_total]}
 
     # Dependency ratio dots
-    if len(dep_source.data["year"]) > 0:
-        display_years = np.array(dep_source.data["year"])
-        if year in display_years:
-            idx = int(np.where(display_years == year)[0][0])
+    dep_years = dep_source.data.get("year", [])
+    if len(dep_years) > 0 and year >= dep_years[0] and year <= dep_years[-1]:
+        idx = int(year - dep_years[0])
+        if idx < len(dep_years) and dep_years[idx] == year:
             dep_young = dep_source.data["young"][idx]
             dep_old = dep_source.data["old"][idx]
             dep_total = dep_source.data["total"][idx]
@@ -1175,8 +1183,8 @@ def start_animation():
     # Initialize indicators to current year
     update_year_indicators(int(pyr_year_slider.value))
 
-    # Add periodic callback
-    ANIMATION_STATE["callback_id"] = curdoc().add_periodic_callback(animate_pyramid, 140) #ms of delay
+    # Add periodic callback (reduced to 100ms for smoother animation)
+    ANIMATION_STATE["callback_id"] = curdoc().add_periodic_callback(animate_pyramid, 100) #ms of delay
 
 def stop_animation():
     """Stop the pyramid animation"""
